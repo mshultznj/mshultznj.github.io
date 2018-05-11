@@ -12,16 +12,32 @@ One of the greatest parts about honeybees, however, is the fact that they make h
 
 ###Getting our data
 ```{r load_package, message=FALSE, warning=FALSE}
-library("tidyr", lib.loc="~/R/win-library/3.4")
+library("tidyr", lib.loc="~/R/win-library/3.4") 
 library("dplyr", lib.loc="~/R/win-library/3.4")
 library("readr", lib.loc="~/R/win-library/3.4")
 library("tidyverse", lib.loc="~/R/win-library/3.4")
+# library("rJava", lib.loc="~/R/win-library/3.4")
+# library("xlsx", lib.loc="~/R/win-library/3.4")
 ```
 With our packages loaded, let's read in our data and take a look at what we have. The dataset comes from [this](https://www.kaggle.com/jessicali9530/honey-production/version/2) kaggle page.
 ```{r data, message=FALSE}
-honey_df <- read_csv("honeyproduction.csv")
+honey_df <- read_csv("honeyproduction.csv") #Data from site
+agr_df <- read_csv("table03.xls.csv") #Read state agricultural data
+honey_df %>% head() 
+agr_df %>% head()
+```
 
-honey_df %>% head()
+Looks like we have some cleaning to do for our agricultural data set. A look at the middle rows will show us that we have 
+```{r view2}
+agr_df %>% slice(50:60)
+```
+So it looks like our cleaning is going to involve splitting this data set, getting better labels, and switching our rows and columns.
+
+# agr_df <- agr_df %>%
+#   slice(c(5,8:100)) 
+colnames(agr_df) = agr_df[5, ]
+agr_df <- agr_df %>%
+  slice(8:100)
 ```
 Here is a basic explanation of the attributes present in the dataset:
 
@@ -35,5 +51,4 @@ stocks       | Stocks held by producers in pounds
 priceperlb   | Average price per pound in dollars
 prodvalue    | Value of production (totalprod x priceperlb) in dollars
 year         | Year data is taken from
-
 

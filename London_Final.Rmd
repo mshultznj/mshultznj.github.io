@@ -1,0 +1,54 @@
+---
+title: "London_Final"
+author: "Michael Shultz"
+date: "May 11, 2018"
+output: html_document
+---
+##Background and Context
+Police are an integral part of the modern state. They help keep the peace in communities, and in many cases provide community services aimed at building trust and relationships with those they are tasked with serving. However, in many places large parts of these communities do not feel like they can trust the people that are supposed to be protecting them. In fact, police in the United Kingdom have [hovered at around a 60% trust rate for the past 31 years](http://www.bbc.com/news/magazine-26730705). This is a large chunk of the community that does not have faith in those that should be aimed at keeping their neighborhoods safe. I aim to look at stop and search data from London between the years of 2014 and 2017 to see if the police do a good job at predicting those they need to search, and whether the low trust in the force is justified or more people should trust their local bobbies.
+
+##Getting our data
+This data comes from the following kaggle page: [https://www.kaggle.com/sohier/london-police-records](https://www.kaggle.com/sohier/london-police-records)
+```{r setup, message=FALSE, warning=FALSE}
+library('dplyr')
+library('readr')
+library('tidyr')
+
+london_df <- read_csv("london-stop-and-search.csv")
+london_df
+```
+
+Looks pretty good so far, but we could make some of the attributes a little clearer. Let's start by turning our true/false attributes into logicals.
+```{r booleaning}
+london_df$`Removal of more than just outer clothing` <- as.logical(london_df$`Removal of more than just outer clothing`)
+london_df$`Outcome linked to object of search` <- as.logical(london_df$`Outcome linked to object of search`)
+london_df$`Part of a policing operation` <- as.logical(london_df$`Part of a policing operation`)
+```
+
+An interesting fact to note is that every value for the "Part of a policing operartion" attribute is either FALSE or NA. Though this could say something about the types of searches the police are carrying out, sincce this attribute and its related attribute "Policing operation" are thus not providing us any useful information, we can get rid of them.
+```{r remove_attr}
+london_df <- london_df %>%
+  select(-`Part of a policing operation`, -`Policing operation`)
+```
+
+Looking at the "Self-defined ethnicity" attribute, we can see that each ethnicity comes with an ID comprised of a letter and a number. Let's break that ID into a separate attribute to make it easier to work with later.
+```{r ethnicity_break}
+#Extract data based off the fact that the ID is stored in parentheses
+london_df <- london_df %>%
+  extract(`Self-defined ethnicity`, into=c('self_defined_ethnicity', 'sde_id'), '(.*)[(](..)[)]')
+```
+
+Finally, we have enough data that we can drop entries where race was not reported, since we'll need that data for our analysis later.
+```{r drop_data}
+#Change Not Stated data to NA
+london_df$sde_id[london_df$sde_id=="NS"]=NA
+#Remove NA values for ethnicity
+london_df <- london_df[complete.cases(london_df[ ,9]),]
+london_df <- london_df[complete.cases(london_df[ ,8]),]
+```
+
+Let's look at the final result.
+```{r preview, echo=FALSE}
+london_df
+```
+
