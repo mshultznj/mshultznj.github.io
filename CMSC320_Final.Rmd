@@ -4,22 +4,36 @@ author: "Michael Shultz"
 date: "May 8, 2018"
 output: html_document
 ---
-```{r setup, include=FALSE}
+#Honey Production in the United States of America
+
+###Background
+Honeybees are an integral part of the ecosystem. They help pollinate flowers and other plants, and are essential to food growth in the United States. [This](http://www.lifebasicsorganics.com/blog/why-are-bees-important) article gives some interesting insight and more detail into what honeybees do for both the environment and human food supply. 
+One of the greatest parts about honeybees, however, is the fact that they make honey. According to the [USDA National Honey Report](https://www.ams.usda.gov/mnreports/fvmhoney.pdf), the U.S. had exported 657,813 kg of honey in 2018 as of April 24. I aim to use previous years to predict honey production for upcoming years.  
+
+###Getting our data
+```{r load_package, message=FALSE, warning=FALSE}
 library("tidyr", lib.loc="~/R/win-library/3.4")
 library("dplyr", lib.loc="~/R/win-library/3.4")
 library("readr", lib.loc="~/R/win-library/3.4")
 library("tidyverse", lib.loc="~/R/win-library/3.4")
 ```
-#Honey Production in the United States of America
-
-###Background
-Honeybees are an integral part of the ecosystem. They help pollinate flowers and other plants, and are essential to food growth in the United States. [This](http://www.lifebasicsorganics.com/blog/why-are-bees-important) article gives some interesting insight and more detail into what honeybees do for both the environment and human food supply. 
-One of the greatest parts about honeybees, however, is the fact that they make honey. According to the [USDA National Honey Report](https://www.ams.usda.gov/mnreports/fvmhoney.pdf), the U.S. had exported 657,813 kg of honey in 2018 as of April 24. In 2006, [colony collapse disorder](http://www.abc.net.au/news/2017-05-08/colony-collapse-ten-years-after-crisis-what-is-happening-to-bees/8507408) crippled the backbone of American honey production. This dataset tracks honey production and sales in the United States from 1998 to 2012.
-
-###Getting our data
-The dataset comes from [this](https://www.kaggle.com/jessicali9530/honey-production/version/2) kaggle page. 
+With our packages loaded, let's read in our data and take a look at what we have. The dataset comes from [this](https://www.kaggle.com/jessicali9530/honey-production/version/2) kaggle page.
 ```{r data, message=FALSE}
 honey_df <- read_csv("honeyproduction.csv")
 
 honey_df %>% head()
 ```
+Here is a basic explanation of the attributes present in the dataset:
+
+Attribute    | Description                                   
+------------ | -------------------------------------------------------
+state        | State data is taken from
+numcol       | Colonies from which honey was taken that year 
+yieldpercol  | Honey yield per colony in pounds              
+totalprod    | Total honey production (numcol x yieldpercol) in pounds
+stocks       | Stocks held by producers in pounds
+priceperlb   | Average price per pound in dollars
+prodvalue    | Value of production (totalprod x priceperlb) in dollars
+year         | Year data is taken from
+
+
