@@ -13,6 +13,7 @@ This data comes from the following kaggle page: [https://www.kaggle.com/sohier/l
 library('dplyr')
 library('readr')
 library('tidyr')
+library('ggplot2')
 
 london_df <- read_csv("london-stop-and-search.csv")
 london_df
@@ -38,13 +39,12 @@ london_df <- london_df %>%
   extract(`Self-defined ethnicity`, into=c('self_defined_ethnicity', 'sde_id'), '(.*)[(](..)[)]')
 ```
 
-Finally, we have enough data that we can drop entries where race was not reported, since we'll need that data for our analysis later.
+Finally, 302,623 entries provides us enough data that we can afford to drop entries where ethnicity or age was not reported, since we'll need that data for our analysis later.
 ```{r drop_data}
 #Change Not Stated data to NA
 london_df$sde_id[london_df$sde_id=="NS"]=NA
-#Remove NA values for ethnicity
-london_df <- london_df[complete.cases(london_df[ ,9]),]
-london_df <- london_df[complete.cases(london_df[ ,8]),]
+#Remove NA values for ethnicity and age
+london_df <- london_df[complete.cases(london_df[ ,5:9]),]
 ```
 
 Let's look at the final result.
@@ -52,3 +52,41 @@ Let's look at the final result.
 london_df
 ```
 
+##Exploring our data
+Now that we have our data in a nice tidy format, lets see what kind of trends we can see. We have a couple different data points that could provide us with interesting information, so lets plot a couple of them and see what we get. Let's start by looking at some basic count statistics.
+```{r search_type, message=FALSE, warnings=FALSE}
+london_df %>%
+  ggplot(aes(x=Type, fill=Type)) +
+  geom_bar() + 
+  labs(title = "Search types conducted") + 
+  geom_text(stat='count', aes(label=..count..))
+```
+
+Most searches are just personal, though about 1 in every 4 people stopped will also have their car searched. 
+```{r gender, message=FALSE, warnings=FALSE}
+london_df %>%
+  ggplot(aes(x=Gender, fill=Gender)) +
+  geom_bar() + 
+  labs(title = "Gender of suspects") + 
+  geom_text(stat='count', aes(label=..count..)) 
+```
+
+About 93% of people stopped are male.
+```{r age, message=FALSE, warnings=FALSE}
+london_df %>%
+  ggplot(aes(x=`Age range`, fill=`Age range`)) +
+  geom_bar() + 
+  labs(title = "Age of suspects") + 
+  geom_text(stat='count', aes(label=..count..)) 
+```
+
+No simple majority here, though there is a clear group that is most commonly stopped.
+```{r ethnicity, message=FALSE, warnings=FALSE}
+london_df %>%
+  ggplot(aes(x=`Officer-defined ethnicity`, fill=`Officer-defined ethnicity`)) +
+  geom_bar() + 
+  labs(title = "Officer reported ethnicity of suspects") +
+  geom_text(stat='count', aes(label=..count..))  
+```
+
+This graph feels like it needs some context. A look at the [2011 London census diversity report](https://files.datapress.com/london/dataset/2011-census-diversity/2011-census-diversity-in-london.pdf) shows that White makes up about 4.5 million people in the population, while Black makes up only about 1 million people. Thus we have a disparity in the percentage of each ethnicity that is getting stopped. 
