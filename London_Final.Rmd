@@ -39,6 +39,19 @@ london_df <- london_df %>%
   extract(`Self-defined ethnicity`, into=c('self_defined_ethnicity', 'sde_id'), '(.*)[(](..)[)]')
 ```
 
+The "Outcome" attribute has some useful data, but is in a format that's slightly hard for us to utilize right now. To fix that, we'll assign each possible outcome a numeric value for easier reference later.
+```{r outcome_assign}
+london_df <- london_df %>% mutate(outcomeID=0)
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+london_df$outcomeID[london_df$Outcome=="Offender cautioned"]=1
+london_df$outcomeID[london_df$Outcome==""]=0
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+london_df$outcomeID[london_df$Outcome=="Nothing found - no further action"]=0
+```
+
 Finally, 302,623 entries provides us enough data that we can afford to drop entries where ethnicity or age was not reported, since we'll need that data for our analysis later.
 ```{r drop_data}
 #Change Not Stated data to NA
@@ -54,16 +67,29 @@ london_df
 
 ##Exploring our data
 Now that we have our data in a nice tidy format, lets see what kind of trends we can see. We have a couple different data points that could provide us with interesting information, so lets plot a couple of them and see what we get. Let's start by looking at some basic count statistics.
-```{r search_type, message=FALSE, warnings=FALSE}
+```{r search_type, message=FALSE, warning=FALSE}
 london_df %>%
+  #Specify label and coloring
   ggplot(aes(x=Type, fill=Type)) +
+  #Bar graph for count comparison
   geom_bar() + 
   labs(title = "Search types conducted") + 
+  #Add a count to our bars
   geom_text(stat='count', aes(label=..count..))
 ```
 
 Most searches are just personal, though about 1 in every 4 people stopped will also have their car searched. 
-```{r gender, message=FALSE, warnings=FALSE}
+```{r outcome, message=FALSE, warning=FALSE}
+london_df %>%
+  ggplot(aes(x=Outcome, fill=Outcome)) +
+  geom_bar() + 
+  labs(title = "Outcome of searches") + 
+  geom_text(stat='count', aes(label=..count..)) + 
+  theme(axis.text.x=element_blank())
+```
+
+Seems like a large majority of searches end up resulting in no action being taken, though when an action is taken they are usually arrested. Also seems like you're much more likekly to get a warning for a drug related offense than any other offense. I left the bottom labels off here since they all blended into each other.
+```{r gender, message=FALSE, warning=FALSE}
 london_df %>%
   ggplot(aes(x=Gender, fill=Gender)) +
   geom_bar() + 
@@ -72,7 +98,7 @@ london_df %>%
 ```
 
 About 93% of people stopped are male.
-```{r age, message=FALSE, warnings=FALSE}
+```{r age, message=FALSE, warning=FALSE}
 london_df %>%
   ggplot(aes(x=`Age range`, fill=`Age range`)) +
   geom_bar() + 
@@ -81,7 +107,7 @@ london_df %>%
 ```
 
 No simple majority here, though there is a clear group that is most commonly stopped.
-```{r ethnicity, message=FALSE, warnings=FALSE}
+```{r ethnicity, message=FALSE, warning=FALSE}
 london_df %>%
   ggplot(aes(x=`Officer-defined ethnicity`, fill=`Officer-defined ethnicity`)) +
   geom_bar() + 
@@ -90,3 +116,44 @@ london_df %>%
 ```
 
 This graph feels like it needs some context. A look at the [2011 London census diversity report](https://files.datapress.com/london/dataset/2011-census-diversity/2011-census-diversity-in-london.pdf) shows that White makes up about 4.5 million people in the population, while Black makes up only about 1 million people. Thus we have a disparity in the percentage of each ethnicity that is getting stopped. 
+
+##Ethnicity Correlation
+
+When discussions of trust in police arise, many people question if police are treating those of different races the same. Let's see if these questions have any basis in truth.
+
+Let's start by seeing if the outcomes of the stops of different races have the same proportions as the overall rates.
+```{r ethnic_stop, message=FALSE, warning=FALSE}
+#Calculate overall proportions of search outcomes
+none_prop <- length(which(london_df$Outcome == "Nothing found - no further action"))/length(london_df$Outcome)
+local_prop <- length(which(london_df$Outcome == "Local resolution"))/length(london_df$Outcome)
+unav_prop <- length(which(london_df$Outcome == "Article found - Detailed outcome unavailable"))/length(london_df$Outcome)
+caution_prop <- length(which(london_df$Outcome == "Offender cautioned"))/length(london_df$Outcome)
+warning_prop <- length(which(london_df$Outcome == "Offender given drugs possession warning"))/length(london_df$Outcome)
+penalty_prop <- length(which(london_df$Outcome == "Offender given penalty notice"))/length(london_df$Outcome)
+arrest_prop <- length(which(london_df$Outcome == "Suspect arrested"))/length(london_df$Outcome)
+court_prop <- length(which(london_df$Outcome == "Suspect summonsed to court"))/length(london_df$Outcome)
+total_v <- c("total", unav_prop, local_prop, none_prop, caution_prop, warning_prop, penalty_prop, arrest_prop, court_prop)
+
+#Create our dataframe
+ethnicity_outcomes <- data.frame(ethnicity="Totals", unavailable=unav_prop, local_res=local_prop, no_action=none_prop, cautioned=caution_prop, possession_warning=warning_prop, penalty_notice=penalty_prop, arrest=arrest_prop, court_summons=court_prop)
+
+for (i in unique(london_df$`Officer-defined ethnicity`)){
+  #Calculate individual ethnicity proportions
+  none_prop <- length(which(london_df$Outcome == "Nothing found - no further action" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  local_prop <- length(which(london_df$Outcome == "Local resolution" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  unav_prop <- length(which(london_df$Outcome == "Article found - Detailed outcome unavailable" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  caution_prop <- length(which(london_df$Outcome == "Offender cautioned" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  warning_prop <- length(which(london_df$Outcome == "Offender given drugs possession warning" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  penalty_prop <- length(which(london_df$Outcome == "Offender given penalty notice" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  arrest_prop <- length(which(london_df$Outcome == "Suspect arrested" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  court_prop <- length(which(london_df$Outcome == "Suspect summonsed to court" & london_df$`Officer-defined ethnicity` == i))/length(which(london_df$`Officer-defined ethnicity` == i))
+  #Add it to our dataframe
+  tmp <- c(i, unav_prop, local_prop, none_prop, caution_prop, warning_prop, penalty_prop, arrest_prop, court_prop)
+  ethnicity_outcomes <- rbind(ethnicity_outcomes,tmp)
+}
+#Fix some data issues
+ethnicity_outcomes$ethnicity <- c("Totals", unique(london_df$`Officer-defined ethnicity`))
+ethnicity_outcomes
+```
+
+Some interesting data points to look at from this. Looking at the rates of no action, we can see that all races are equally likely to have no action taken against them. However, it is the actions that are taken that differences are seen. 
