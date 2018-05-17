@@ -1,0 +1,148 @@
+---
+title: "NYSE Analysis"
+author: "Michael Shultz"
+date: "May 17, 2018"
+output: html_document
+---
+
+##Background and Context
+Data science is an integral part of many fields now. Pretty much anywhere you look people have data they need analyzed. One field this that requires this even more than others is the stock market. People working on the stock market have a constant influx of data all day, and need to be able to utilize it to make the right decisions with their investments. Today, I'm going to walk you through the data science pipeline through the lens of the stock market, and maybe by the end we'll be able to find a nice investment for us both to make some money.
+
+##Getting our data
+This data comes from the following kaggle page: [https://www.kaggle.com/dgawlik/nyse/data](https://www.kaggle.com/dgawlik/nyse/data). The first thing we need to do is read in our data. We save it as a CSV file, and load it into a dataframe.
+```{r setup, message=FALSE, warning=FALSE}
+library('dplyr')
+library('readr')
+library('tidyr')
+library('ggplot2')
+library('nnet')
+library('broom')
+library('lubridate')
+
+se_df <- read_csv("prices.csv")
+se_df
+```
+
+Here we have a dataframe with 7 attributes. Our 7 attributes are: 
+
+Attribute    | Description                                   
+------------ | -------------------------------------------------------
+date         | Date of observed data
+symbol       | New York Stock Exchange (NYSE) company symbol  
+open         | Price per share at open              
+close        | Price per share at close
+low          | Lowest price per share on given day
+high         | Highest price per share on given day
+volume       | Total number of stocks for that company
+
+The NYSE uses a set of symbols to represent their companies. These 1-4 letter representations make it faster for stockbrokers to communicate, and a list of their meanings can be found on the [NASDAQ website](https://www.nasdaq.com/screening/company-list.aspx).
+
+##Tidying our data
+Before we go into our analysis, we have a couple things we can change about our dataset to make it a little easier to work with and analyze. This process of tidying our data is an important part of the data science pipeline, as it makes sure we can easily handle whatever data we receive. 
+
+First, we'll change our date attribute from a datetime to a date. All of our data has the time set to 00:00:00, so we are not losing anything by making this conversion. We're also going to create attributes for our year, month, and date to make them easier to access later.
+```{r dt_to_date}
+se_df$date <- as.Date(se_df$date)
+se_df <- se_df %>%
+  mutate(year=as.integer(format(se_df$date,"%Y"))) %>%
+  mutate(month=as.integer(format(se_df$date,"%m"))) %>%
+  mutate(day=as.integer(format(se_df$date,"%d")))
+```
+
+Second, we'll trim down our data a little bit. 850,000 data points is more than we need for our demonstration, so we'll cut some of the fat out. Our dataset currently holds data from 2010-2016, but for now we're just going to look in the short term and narrow it down to one year.
+```{r range_narrow}
+se_df <- se_df[!(se_df$year<2016),]
+```
+
+To make sure we have enough information for our analysis, we can look at the counts of each symbol to see that we still have enough data on all of our individual entries.
+```{r counts}
+count <- count(se_df, symbol) %>%
+  #Sorts our data in increasing order
+  arrange(n)
+count
+```
+Our least tracked symbol still has 126 entries, so I think our analysis will be fine.
+
+
+Finally, we'll create an attribute that describes whether our stock price has gone up or down since the previous date. Note that not everydate is represented in this dataset, so we'll have to take that into consideration when calculating the change. Also note that we use a positive integer to indicate an increase, and a negative number to indicate a decrease
+
+```{r price_change, warning=FALSE}
+#Sort our dataframe by symbol and date
+se_df <- se_df %>% 
+  arrange(symbol, date) %>%
+  #Holder value for our variable
+  mutate(percent_change = 0.0)
+#Calculate change
+for (i in 1:nrow(se_df)){
+  if (i==1 || !(se_df$symbol[i]==se_df$symbol[i-1])){
+    #Base case for first dates
+    se_df$percent_change[i] <- 0.0
+  }else{
+    #We'll use closing values to track change
+    #Percent change is difference in values divided by previous value times 100
+    se_df$percent_change[i] <- ((se_df$close[i]-se_df$close[i-1])/se_df$close[i-1])*100
+    # if (se_df$close[i] >= se_df$close[i-1]){
+    #   se_df$percent_change[i] <- 1
+    # }else{
+    #   se_df$percent_change[i] <- -1
+    # }
+  }
+}
+```
+
+And let's take one final look at our finished product.
+```{r viewer}
+se_df
+```
+
+And there we go! Our dataset now tracks stocks and their values over the course of 2016, and tells us how it changed over time.
+
+##Exploring our data
+
+Now that our data looks nice, it's time for us to actually do something with it. The first step in this process is exploratory data analysis, or EDA. EDA is the process of looking through our data to start to see if we can observe some patterns in it. We hope that by looking at our data, we can make better decisions for our statistical and machine learning methods.
+
+Let's start by looking at price changes over time. First, let's look at our change in the average closing price of the market over time. We'll be using the ggplot2 library to create our plots.
+```{r month_plot}
+se_df %>%
+  #Look at the data for each date together
+  group_by(date) %>%
+  #Calculate the average of the closing price
+  mutate(average = mean(close)) %>%
+  ggplot(aes(x=date, y=average)) +
+  #Use a line graph to plot change over time
+  geom_line() + 
+  labs(title="Change in average market price over time",
+       x="Date", y="Average market price")
+```
+
+Seems like we've had a decent amount of upward trend in the past year. The average stock price started at around 82.5, and has increased to a little under 90. 
+
+Now we'll look at how individual months behaved. To do this, we'll use a boxplot. Boxplots give us information on 5 important statistical values: The minimum, the first quartile, the median, the third quartile, and the max. This allows us to see some more information on how individual months behaved for the stock market.
+```{r month}
+se_df %>%
+  group_by(date) %>%
+  mutate(average = mean(close)) %>%
+  ggplot(aes(x=factor(month), y=average)) +
+  geom_boxplot() + 
+  labs(title="Change in average market price over time",
+       x="Date", y="Average market price")
+```
+
+Seems like certain months have a lot of variability, while others are more constant. Variability in a month can be seen from the total length of the plot, as the farther apart the ends are the more spread the minimum and maximum average for the month were. What's interesting to note is we have 3 months with clear bottom outliers, dots separated from the rest of the graph, but no top outliers. So it seems like the market is unlikely to have an unusually good day, but there are chance of it having unusually bad days. 
+
+
+Sometimes we want to look at how we're changing on a day to day basis. Let's look at how the change in percent_change of the overall market varies over time.
+```{r trends}
+se_df %>%
+  group_by(date) %>%
+  mutate(average = mean(percent_change)) %>%
+  ggplot(aes(x=date, y=average)) +
+  geom_line() +
+  labs(title="Market change by date",
+       x="Date", y="Market change")
+```
+
+Some interesting data in this graph. The market doesn't seem to stay growing or shrinking for a very consistent period of time. Instead it tends to fluctuate back and forth. There was a decent spike around late January-early February (perhaps related to the inauguration?) and a very deep dive right before July. While these might be interesting to explore in a different setting, for right now we'll just take note of them and continue on.
+
+##Machine learning
+Now that we've explored some of our data, it's time to see if we can put it to use! We want to see if we can use the data we have to predict what will happen in the future using machine learning. Machine learning is just a way for us to "train" our computer to recognize patterns in the data, and use these patterns to predict what will happen later.

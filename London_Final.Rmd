@@ -14,6 +14,8 @@ library('dplyr')
 library('readr')
 library('tidyr')
 library('ggplot2')
+library('nnet')
+library('broom')
 
 london_df <- read_csv("london-stop-and-search.csv")
 london_df
@@ -39,12 +41,20 @@ london_df <- london_df %>%
   extract(`Self-defined ethnicity`, into=c('self_defined_ethnicity', 'sde_id'), '(.*)[(](..)[)]')
 ```
 
-Finally, we need to decide what to do with our missing data in other areas. Our main focus of this analysis will be ethnicity and age, so we'll focus on those areas. With 302,613 data points, it feels like we should be safe simply dropping this missing data, so let's try that.
+We are also going to add a new attribute dealing with our "Object of search". Right now, entries with no search objective are coded as NA. To change this, we'll create a new logical attribute that holds true if there was an object of search, and false if there was none.
+```{r logic_object}
+london_df <- london_df %>% 
+  mutate(was_object = ifelse(is.na(`Object of search`), FALSE, TRUE))
+```
+
+Finally, we need to decide what to do with our missing data in other areas. Some important areas that seem to be missing data are our age, ethnicity, and object of search attributes. With 302,613 data points, it feels like we should be safe simply dropping this missing data, so let's try that.
 ```{r drop_data}
 #Change Not Stated data to NA
 london_df$sde_id[london_df$sde_id=="NS"]=NA
 #Remove NA values for ethnicity and age
 london_df <- london_df[complete.cases(london_df[ ,5:9]),]
+#Remove NA values for "object of search"
+#london_df <- london_df[complete.cases(london_df[ ,11]),]
 
 london_df
 ```
@@ -146,3 +156,15 @@ ethnicity_outcomes
 ```
 
 Some interesting data points to look at from this. Our no action values seem to be pretty similar, but our percentages for the solutions taken seem to vary a decent amount. Local resolution has a higher chance of occuring for those the officers label White, while Asians are more likely to recieve a penalty notice. Maybe we can predict what solution an officer will take based off of someone's ethnicity. Let's try!
+
+##Machine learning
+
+Machine learning is used to find patterns in our data and make predictions based off those patterns. Here we'll attempt to use machine learning to make a prediction about our data. The first thing we need to do is to specify our goal. Here we'll say that our goal is to be able to predict the outcome of a stop based off the other attributes of the stop. 
+
+
+```{r log_reg}
+race_fit <- multinom(Outcome ~ `Officer-defined ethnicity`, data=london_df)
+```
+```{r tidy}
+race_fit %>% tidy() %>% knitr::kable(digits=4)
+```
