@@ -9,15 +9,18 @@ output: html_document
 Data science is an integral part of many fields now. Pretty much anywhere you look people have data they need analyzed. One field this that requires this even more than others is the stock market. People working on the stock market have a constant influx of data all day, and need to be able to utilize it to make the right decisions with their investments. Today, I'm going to walk you through the data science pipeline through the lens of the stock market, and maybe by the end we'll be able to find a nice investment for us both to make some money.
 
 ##Getting our data
-This data comes from the following kaggle page: [https://www.kaggle.com/dgawlik/nyse/data](https://www.kaggle.com/dgawlik/nyse/data). The first thing we need to do is read in our data. We save it as a CSV file, and load it into a dataframe.
+This data comes from the following kaggle page: [https://www.kaggle.com/dgawlik/nyse/data](https://www.kaggle.com/dgawlik/nyse/data). The first thing we need to do is load our libraries and read in our data. The file is saved as a CSV ( [comma separated values](https://en.wikipedia.org/wiki/Comma-separated_values)) file, and load it into a dataframe.
 ```{r setup, message=FALSE, warning=FALSE}
 library('dplyr')
 library('readr')
 library('tidyr')
 library('ggplot2')
-library('nnet')
 library('broom')
 library('lubridate')
+library('caret')
+library('randomForest')
+library('tibble')
+library('ROCR')
 
 se_df <- read_csv("prices.csv")
 se_df
@@ -81,11 +84,6 @@ for (i in 1:nrow(se_df)){
     #We'll use closing values to track change
     #Percent change is difference in values divided by previous value times 100
     se_df$percent_change[i] <- ((se_df$close[i]-se_df$close[i-1])/se_df$close[i-1])*100
-    # if (se_df$close[i] >= se_df$close[i-1]){
-    #   se_df$percent_change[i] <- 1
-    # }else{
-    #   se_df$percent_change[i] <- -1
-    # }
   }
 }
 ```
@@ -146,3 +144,209 @@ Some interesting data in this graph. The market doesn't seem to stay growing or 
 
 ##Machine learning
 Now that we've explored some of our data, it's time to see if we can put it to use! We want to see if we can use the data we have to predict what will happen in the future using machine learning. Machine learning is just a way for us to "train" our computer to recognize patterns in the data, and use these patterns to predict what will happen later.
+
+The first thing we need to do is choose a hypothesis to predict. Now it should be clear that the stock market can already be at least somewhat predicted. If that wasn't possible, a lot of day traders would be out of luck! But what we can do is see if we can find a better way of predicting the market. What we'll do is test if making a prediction with raw data we have is better or worse than predicting with data standardized in relation to each company.
+
+The first thing we want to do is turn our market change into a binomial variable. A binomial variable is simply a variable where there are only two possible options, in this case increase or decrease, that has been sampled multiple times (more info about binomial variables can be found [here](https://en.wikipedia.org/wiki/Binomial_distribution)). 
+```{r to_bin}
+se_df <- se_df %>% mutate(Direction=ifelse(percent_change>=0, "up", "down"))
+```
+
+Next, we need to create a standardized set of data for our analysis to use. We'll shorte our dataset a bit to improve calculation times.
+```{r standardize}
+std_df <- se_df %>%
+  filter(month %in% 7:9) %>%
+  group_by(symbol) %>%
+  #Get mean of each company
+  mutate(mean_change = mean(percent_change)) %>%
+  #Standard deviation of each company
+  mutate(sd_change = sd(percent_change)) %>%
+  #Calculate the standardized score
+  mutate(z_change = (percent_change-mean_change)/sd_change) %>%
+  #Ungroup our data
+  ungroup()
+std_df
+```
+
+Looks good so far. Now for our analysis, we're going to use 15-fold cross validation on a random forest. A random forest is a collection of decision trees, trees that use the data they're provided to predict an outcome. A random forest simply builds a large amount of these trees, and averages their predictions to come up with its answer. Cross validation is a way for us to sample our data multiple times to ensure that our error rate remains low. More about cross validation [here](https://www.openml.org/a/estimation-procedures/1), and random forests [here](https://towardsdatascience.com/the-random-forest-algorithm-d457d499ffcd). 
+
+The first thing we do is create a wide dataset by using the tidyr::spread function.
+```{r widen}
+wide_se <- se_df %>%
+  filter(month %in% 7:9) %>%
+  dplyr::select(date, symbol, percent_change) %>%
+  tidyr::spread(date, percent_change)
+wide_std <- std_df %>%
+  dplyr::select(date, symbol, z_change) %>%
+  tidyr::spread(date, z_change)
+```
+
+Next, we calculate our differences.
+
+```{r magic}
+third_quarter <- se_df %>% filter(month %in% 7:9)
+#Calculate it for our raw data
+matrix_1 <- wide_se %>%
+  dplyr::select(-symbol) %>%
+  as.matrix() %>%
+  .[,-1]
+
+matrix_2 <- wide_se %>%
+  dplyr::select(-symbol) %>%
+  as.matrix() %>%
+  .[,-ncol(.)]
+
+diff_df <- (matrix_1 - matrix_2) %>%
+  magrittr::set_colnames(NULL) %>%
+  as_data_frame() %>%
+  mutate(symbol=wide_se$symbol)
+
+#Add the predicting outcome
+df_norm <- diff_df %>%
+  inner_join(third_quarter %>% dplyr::select(symbol, Direction), by="symbol") %>%
+  mutate(Direction=factor(Direction, levels=c("down","up")))
+
+#Calculate for our standardized data
+matrix_1 <- wide_std %>%
+  dplyr::select(-symbol) %>%
+  as.matrix() %>%
+  .[,-1]
+
+matrix_2 <- wide_std %>%
+  dplyr::select(-symbol) %>%
+  as.matrix() %>%
+  .[,-ncol(.)]
+
+diff_df <- (matrix_1 - matrix_2) %>%
+  magrittr::set_colnames(NULL) %>%
+  as_data_frame() %>%
+  mutate(symbol=wide_se$symbol)
+
+#Add the predicting outcome
+df_std <- diff_df %>%
+  inner_join(third_quarter %>% dplyr::select(symbol, Direction), by="symbol") %>%
+  mutate(Direction=factor(Direction, levels=c("down","up")))
+
+df_std
+df_norm
+```
+
+Now that everything is set up, it's time to construct our forests. Since we have a lot of data, we'll do 15-folds to give us a better chance of high accuracy. We'll use 100 trees for each forest.
+```{r treeeeees}
+#Sets the seed for randomness
+set.seed(1234)
+
+#Test on our raw data first
+result_df_norm <- createFolds(df_norm$Direction, k=15) %>%
+  #Apply a function to our dataset
+  purrr::imap(function(test_indices, fold_number){
+    #Set part of our data as training data
+    train_df <- df_norm %>%
+      dplyr::select(-symbol) %>%
+      slice(-test_indices)
+    #Set the rest as our testing data
+    test_df <- df_norm %>%
+      dplyr::select(-symbol) %>%
+      slice(test_indices)
+    #Fit our random forest on our training data
+    rf <- randomForest(Direction~., data=train_df, ntree=100, na.action = na.exclude)
+    #Use our test data to add predicted values
+    test_df %>%
+      dplyr::select(observed_label = Direction) %>%
+      mutate(fold=fold_number) %>%
+      mutate(prob_positive_norm = predict(rf, newdata=test_df, type="prob")[, "up"]) %>%
+      mutate(predicted_label_norm = ifelse(prob_positive_norm > 0.5, "up", "down"))
+  }) %>%
+  purrr::reduce(bind_rows) %>%
+  rowid_to_column("ID")
+
+#Next test on our standarized data
+result_df_std <- createFolds(df_std$Direction, k=15) %>%
+  #Apply a function to our dataset
+  purrr::imap(function(test_indices, fold_number){
+    #Set part of our data as training data
+    train_df <- df_std %>%
+      dplyr::select(-symbol) %>%
+      slice(-test_indices)
+    #Set the rest as our testing data
+    test_df <- df_std %>%
+      dplyr::select(-symbol) %>%
+      slice(test_indices)
+    #Fit our random forest on our training data
+    rf <- randomForest(Direction~., data=train_df, ntree=100, na.action = na.exclude)
+    #Use our test data to add predicted values
+    test_df %>%
+      dplyr::select(observed_label = Direction) %>%
+      mutate(fold=fold_number) %>%
+      mutate(prob_positive_std = predict(rf, newdata=test_df, type="prob")[, "up"]) %>%
+      mutate(predicted_label_std = ifelse(prob_positive_std > 0.5, "up", "down"))
+  }) %>%
+  purrr::reduce(bind_rows) %>%
+  rowid_to_column("ID")
+
+#Merge our two experiments, and clean them up
+names(result_df_norm)[2] <- "observed_norm"
+names(result_df_std)[2] <- "observed_std"
+result_df <- merge(result_df_norm, result_df_std, by="ID")
+names(result_df)[3] <- "fold"
+result_df <- result_df %>%
+  dplyr::select(-fold.y)
+
+result_df %>% head()
+```
+```{r na_omit, echo=FALSE}
+result_df <- na.omit(result_df)
+```
+Now that we have our results, we can compute our error on each fold for each model.
+```{r error_comp}
+result_df %>%
+  mutate(error_norm = (observed_norm != predicted_label_norm),
+         error_std = (observed_std != predicted_label_std)) %>%
+  group_by(fold) %>%
+  summarize(norm_rf=mean(error_norm), std_rf=mean(error_std)) %>%
+  tidyr::gather(model, error, -fold) %>%
+  lm(error~model, data=.) %>%
+  broom::tidy()
+```
+
+Finally, we'll create a Reciever Operating Characteristic (ROC) curve to see how our two plans lined up. An ROC curve tells us how good a binary classifier, in this case our predictor, is at doing its job. By calculating the area underneath the ROC curve (AUROC), we can tell how good of a job our predictor is doing. If you're interested in reading more in depth about them, you can read up on it [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic).
+```{r roc}
+#Create a list of labels for true observed
+labels_std <- split(result_df$observed_std, result_df$fold)
+labels_norm <- split(result_df$observed_norm, result_df$fold)
+
+#Create a list of predictions for our two random forests
+predictions_std <- split(result_df$prob_positive_std, result_df$fold) %>% prediction(labels_std)
+predictions_norm <- split(result_df$prob_positive_norm, result_df$fold) %>% prediction(labels_norm)
+
+#Compute average AUROCs
+mean_auc_std <- predictions_std %>%
+  performance(measure="auc") %>%
+  slot("y.values") %>% unlist() %>%
+  mean()
+mean_auc_norm <- predictions_norm %>%
+  performance(measure="auc") %>%
+  slot("y.values") %>% unlist() %>%
+  mean()
+
+#Plot our ROC curves
+predictions_std %>%
+  performance(measure="tpr", x.measure="fpr") %>%
+  plot(avg="threshold", col="orange", lwd=2)
+predictions_norm %>%
+  performance(measure="tpr", x.measure="fpr") %>%
+  plot(avg="threshold", col="blue", lwd=2, add=TRUE)
+#Add a legend
+legend("bottomright",
+       legend=paste(c("std", "norm"), "data, AUC:",
+                    round(c(mean_auc_std,mean_auc_norm),digits=3)),
+       col=c("orange","blue"))
+```
+
+Thus our random forests are right about 49% of the time with our standardized data, and 48.6% of the time for the normal data. Obviously, these percentages are not the type of values we would like to see if we were going to use this to predict whether the stock market would increase or decrease on a given day. We'd be better off flipping a coin! There are multiple reasons this could happen. Part of it could be the fact that in order to lower the amount of data we only looked at a three month timespan. Perhaps lowering the amount of stocks we looked at would have been a better method of data trimming. It's also possible that using a linear method like this is simply not good for predicting the stock market. It is a complex system that relies on public opinion and current news to change, and it's possible that simply looking at past data is not a good enough indicator.
+
+##Hypothesis testing
+Regardless of the lack of accuracy of our forests, we still should look at if our hypothesis was good. Our question we wanted to answer was if standardizing the percent change in price for each stock would affect our prediction accuracy. If this was true, we would reject the null hypothesis that the two methods were equal, otherwise we would accept the null hypothesis. For our purposes, we will say that if p<0.05, we will reject the null hypothesis (more info on p values [here](http://www.dummies.com/education/math/statistics/what-a-p-value-tells-you-about-statistical-data/)). As we saw above, the p value for our test was 0.8568, significantly greater than 0.05. Thus, we would not reject the null hypothesis, and we conclude that standardizing percent changes does not help you better predict the stock market.
+
+##Conclusion
+The stock market is a wild place. People can make fortunes on playing the stock market correctly, but many people are just as likely to lose it all. While the analysis we did would not help us find success on the market, there's a large chunk of data here that we simply could not process. Perhaps using more data would allow us to better predict it. But maybe its just the data telling us that to not quit our day jobs, and the stock market isn't just a code for us to crack.
